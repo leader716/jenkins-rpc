@@ -66,11 +66,17 @@ function run_tag {
   export ANSIBLE_FORCE_COLOR
   local tag="$1"
 
-  # print env
+  # Convert list of RPC features to ansible tag syntax
+  if [[ $PRODUCT == "rpc-openstack" ]]; then
+    convert_rpc_features
+  fi
+
+  build_tags
+
   env
 
   if [[ ${tag} == "prepare" ]]; then
-    echo "Running tag ${tag} from multinode.yml with tags: ${tag}, ${PRODUCT}, and ${LAB_PREFIX}."
+    echo "Running tag ${tag} from multinode.yml with tags: ${TAGS}"
     ansible-playbook \
       --inventory-file="inventory/${LAB_PREFIX}-${LAB}" \
       --extra-vars="@vars/${LAB_PREFIX}-${LAB}.yml" \
@@ -79,8 +85,8 @@ function run_tag {
       --extra-vars="product_url=${PRODUCT_URL}" \
       --extra-vars="product_branch=${PRODUCT_BRANCH}" \
       --extra-vars="config_prefix=${CONFIG_PREFIX}" \
-      --tags="${tag},${PRODUCT},${LAB_PREFIX}" \
-      ${ANSIBLE_OPTIONS} \
+      --tags="$TAGS" \
+      "$ANSIBLE_OPTIONS" \
       multinode.yml
   else
     echo "Running tag ${tag} from multinode.yml"
@@ -98,6 +104,35 @@ function run_tag {
   fi
 }
 
+function build_tags {
+  # This is a nasty method that could be done much better: jwagner
+  # We need to create comma seperated no space string of all tags
+  # that we will run, ignoreing empty tag values
+  TAGS=$tag
+
+  if [[ "$PRODUCT" != "" ]]; then
+    TAGS+=",${PRODUCT}"
+  fi
+
+  if [[ "$ANSIBLE_RPC_FEATURES" != "" ]]; then
+    TAGS+=",${ANSIBLE_RPC_FEATURES}"
+  fi
+
+  if [[ "$LAB_PREFIX" != "" ]]; then
+    TAGS+=",${LAB_PREFIX}"
+  fi
+}
+
+function convert_rpc_features {
+  for feature in "${RPC_FEATURES[@]}"
+  do
+    ANSIBLE_RPC_FEATURES+="$feature,"
+  done
+  # remove trailing ,
+  ANSIBLE_RPC_FEATURES="${ANSIBLE_RPC_FEATURES%?}"
+}
+
+>>>>>>> c591fe6... made tags a list and convert to string before passing
 function run_script {
   local script="$1"
 
