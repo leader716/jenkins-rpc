@@ -15,6 +15,9 @@ class Build(object):
     the build.xml, injected_vars and log files.
     """
     def __init__(self, build_folder, job_name, build_num):
+        self.uuid_re = re.compile("([0-9a-zA-Z]+-){4}[0-9a-zA-Z]+")
+        self.ip_re = re.compile("([0-9]+\.){3}[0-9]+")
+        self.termbin_re = re.compile("http://termbin.com/([0-9a-zA-Z]*)")
         self.tree = etree.parse('{bf}/build.xml'.format(
             bf=build_folder,
             job_name=job_name,
@@ -44,6 +47,24 @@ class Build(object):
         self.failures = set()
         if self.result != 'SUCCESS':
             self.get_failure_info()
+
+    def normalise_failure(self, failure_string):
+        """Remove identifiers from failures
+
+        This prevents multiple incidents of the same failure being counted as
+        multiple failures
+        """
+
+        failure_string = self.uuid_re.sub('** uuid removed **',
+                                          failure_string)
+        failure_string = self.ip_re.sub('** ip removed **',
+                                        failure_string)
+        failure_string = self.termbin_re.sub('** termbin link removed **',
+                                             failure_string)
+        return failure_string
+
+    def add_failure(self, failure):
+        self.failures.add(self.normalise_failure(failure))
 
     def read_env_file(self, path):
         kvs = {}
@@ -164,7 +185,7 @@ class Build(object):
             #    self.deploy_rc(lines)
 
         if not self.failures:
-            self.failures.add("Unknown Failure")
+            self.add_failure("Unknown Failure")
 
     def holland_fail(self, lines):
         match_re = re.compile("HOLLAND_RC=1")
@@ -172,8 +193,8 @@ class Build(object):
             match = match_re.search(line)
             if match:
                 fail = lines[i-1]
-                self.failures.add("Holland failure: {fail}".format(
-                                  fail=fail))
+                self.add_failure("Holland failure: {fail}".format(
+                                 fail=fail))
 
     def pip_cannot_find(self, lines):
         match_re = re.compile("Could not find a version that satisfies "
@@ -182,16 +203,16 @@ class Build(object):
             match = match_re.search(line)
             if match:
                 if not self.failure_ignored(i, lines):
-                    self.failures.add("Can't find pip package: {fail}".format(
-                                      fail=match.group(1)))
+                    self.add_failure("Can't find pip package: {fail}".format(
+                                     fail=match.group(1)))
 
     def apt_fail(self, lines):
         match_re = re.compile("W: Failed to fetch (.*) *Hash Sum mismatch")
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add("Apt Hash Sum mismatch: {fail}".format(
-                                  fail=match.group(1)))
+                self.add_failure("Apt Hash Sum mismatch: {fail}".format(
+                                 fail=match.group(1)))
                 break
 
     def compile_fail(self, lines):
@@ -199,32 +220,32 @@ class Build(object):
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add("gcc fail: {fail}".format(
-                                  fail=match.group(1)))
+                self.add_failure("gcc fail: {fail}".format(
+                                 fail=match.group(1)))
 
     def tempest_filter_fail(self, lines):
         match_re = re.compile("'Filter (.*) failed\.")
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add("Openstack Tempest Gate test "
-                                  "set filter {fail} failed.".format(
-                                      fail=match.group(1)))
+                self.add_failure("Openstack Tempest Gate test "
+                                 "set filter {fail} failed.".format(
+                                     fail=match.group(1)))
 
     def tempest_testlist_fail(self, lines):
         match_re = re.compile("exit_msg 'Failed to generate test list'")
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add("Openstack Tempest Gate: "
-                                  "failed to generate test list")
+                self.add_failure("Openstack Tempest Gate: "
+                                 "failed to generate test list")
 
     def jenkins_exception(self, lines):
         match_re = re.compile("hudson\.[^ ]*Exception.*")
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add(match.group())
+                self.add_failure(match.group())
 
     def invalid_ansible_param(self, lines):
         match_re = re.compile("ERROR:.*is not a legal parameter in an "
@@ -232,14 +253,14 @@ class Build(object):
         for line in lines:
             match = match_re.search(line)
             if match:
-                self.failures.add(match.group())
+                self.add_failure(match.group())
 
     def rate_limit(self, lines):
         match_re = re.compile("Rate limit has been reached.")
         for i, line in enumerate(lines):
             match = match_re.search(line)
             if match:
-                self.failures.add('Rate limit has been reached.')
+                self.add_failure('Rate limit has been reached.')
 
     def archive_fail(self, lines):
         match_re = re.compile(
@@ -248,7 +269,7 @@ class Build(object):
         for i, line in enumerate(lines):
             match = match_re.search(line)
             if match:
-                self.failures.add('Failed on archiving artifacts')
+                self.add_failure('Failed on archiving artifacts')
 
     def create_fail(self, lines):
         match_re = re.compile(
@@ -256,7 +277,7 @@ class Build(object):
         for i, line in enumerate(lines):
             match = match_re.search(line)
             if match:
-                self.failures.add('Heat Resource Fail: {error}'.format(
+                self.add_failure('Heat Resource Fail: {error}'.format(
                     error=match.groupdict()['error']))
 
     def ansible_task_fail(self, lines):
@@ -266,7 +287,7 @@ class Build(object):
             if match:
                 previous_task = self.get_previous_task(i, lines)
                 if not self.failure_ignored(i, lines):
-                    self.failures.add('Task Failed: {task}'.format(
+                    self.add_failure('Task Failed: {task}'.format(
                         task=previous_task))
 
     def setup_tools_sql_alchemy(self, lines):
@@ -275,7 +296,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "Setup Tools / SQL Alchemy Fail. PrevTask: {task}".format(
                         task=previous_task))
                 break
@@ -285,7 +306,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "Maas Alarm in alert state. PrevTask: {task}".format(
                         task=previous_task))
                 break
@@ -296,7 +317,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line or alt_match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "dpkg locked. PrevTask: {task}".format(
                         task=previous_task))
                 break
@@ -306,7 +327,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "user ceilometer not found. PrevTask: {task}".format(
                         task=previous_task))
                 break
@@ -316,7 +337,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "Cannot find role. PrevTask: {task}".format(
                         task=previous_task))
                 break
@@ -326,8 +347,8 @@ class Build(object):
         for i, line in enumerate(lines):
             match = match_re.search(line)
             if match:
-                self.failures.add('Nova/Neutron Error: '
-                                  'Security Group ... in use')
+                self.add_failure('Nova/Neutron Error: '
+                                 'Security Group ... in use')
                 break
 
     def tempest_test_fail(self, lines):
@@ -336,15 +357,13 @@ class Build(object):
             match = match_re.search(line)
             if match:
                 test = match.groupdict()['test']
-                self.failures.add('Tempest Test Failed: {test}'.format(
+                self.add_failure('Tempest Test Failed: {test}'.format(
                     test=test))
 
     def tempest_exception(self, lines):
         exc_re = re.compile('tempest\.lib\.exceptions.*')
         class_re = re.compile("<class '([^']*)'>")
         details_re = re.compile("Details: (.*)$")
-        uuid_re = re.compile("([0-9a-zA-Z]+-){4}[0-9a-zA-Z]+")
-        ip_re = re.compile("([0-9]+\.){3}[0-9]+")
         for i, line in enumerate(lines):
             exc_match = exc_re.search(line)
             if exc_match:
@@ -363,16 +382,14 @@ class Build(object):
                     '{exc} {details} {cls}'.format(exc=exc,
                                                    details=details,
                                                    cls=cls))
-                failure_string = uuid_re.sub('**removed**', failure_string)
-                failure_string = ip_re.sub('**removed**', failure_string)
-                self.failures.add(failure_string)
+                self.add_failure(failure_string)
 
     def elasticsearch_plugin_install(self, lines):
         match_str = 'failed to download out of all possible locations...'
         for i, line in enumerate(lines):
             if match_str in line:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "Elasticsearch Plugin Install Fail. "
                     "PrevTask: {task}".format(
                         task=previous_task))
@@ -386,7 +403,7 @@ class Build(object):
                 beforecontext = lines[i-1:i-4:-1]
                 for j, cline in enumerate(beforecontext):
                     beforecontext[j] = remove_colour.sub('', cline)
-                self.failures.add("Unkown:" + " ".join(beforecontext))
+                self.add_failure("Unkown:" + " ".join(beforecontext))
                 break
 
     def rsync_fail(self, lines):
@@ -394,7 +411,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_re.search(line):
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     'Failure Running Rsync. PrevTask: {task}'.format(
                         task=previous_task))
                 break
@@ -404,14 +421,14 @@ class Build(object):
                      "Make sure this host can be reached over ssh")
         for line in lines:
             if match_str in line:
-                self.failures.add(match_str.strip())
+                self.add_failure(match_str.strip())
                 break
 
     def rebase_fail(self, lines):
         match_str = "Rebase failed, quitting\n"
         try:
             lines.index(match_str)
-            self.failures.add("Merge Conflict: " + match_str.strip())
+            self.add_failure("Merge Conflict: " + match_str.strip())
         except ValueError:
             return
 
@@ -420,7 +437,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if match_str in line and '...ignoring' not in lines[i+1]:
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     "Too many retries. PrevTask: {task}".format(
                         task=previous_task))
 
@@ -480,7 +497,7 @@ class Build(object):
             # didn't find a match
             return
         previous_task = self.get_previous_task(fail_line, lines)
-        self.failures.add(
+        self.add_failure(
             'Service Unavailable 503. PrevTask: {previous_task}'.format(
                 previous_task=previous_task))
 
@@ -491,7 +508,7 @@ class Build(object):
         for i, line in enumerate(lines):
             if pattern.search(line):
                 previous_task = self.get_previous_task(i, lines)
-                self.failures.add(
+                self.add_failure(
                     'Build Timeout: {previous_task}'.format(
                         previous_task=previous_task))
                 break
@@ -502,7 +519,7 @@ class Build(object):
         try:
             i = lines.index(match_str)
             previous_task = self.get_previous_task(i, lines)
-            self.failures.add("Apt Mirror Fail: {line} {task}".format(
+            self.add_failure("Apt Mirror Fail: {line} {task}".format(
                 line=match_str.strip(),
                 task=previous_task))
         except ValueError:
@@ -513,7 +530,7 @@ class Build(object):
                      "The server didn't respond in time. (HTTP N/A)\n")
         try:
             lines.index(match_str)
-            self.failures.add("Cirros upload fail: " + match_str.strip())
+            self.add_failure("Cirros upload fail: " + match_str.strip())
         except ValueError:
             return
 
