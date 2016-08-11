@@ -167,6 +167,12 @@ tempest_tempest_conf_overrides:
     snapshot: True
 EOVARS
 
+# Increase default retry interval from 5 seconds to 60. Retries is 3.
+tee -a $uev &>/dev/null <<EOVARS
+# wait longer for container startup
+ssh_delay: 60
+EOVARS
+
 # Set ubuntu repo to supplied value. Effects Host bootstrap, and container default repo.
 export BOOTSTRAP_OPTS="${BOOTSTRAP_OPTS:-} bootstrap_host_ubuntu_repo=${UBUNTU_REPO}"
 export BOOTSTRAP_OPTS="${BOOTSTRAP_OPTS} bootstrap_host_ubuntu_security_repo=${UBUNTU_REPO}"
