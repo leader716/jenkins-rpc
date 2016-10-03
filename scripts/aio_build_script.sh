@@ -206,6 +206,13 @@ if [ "$UPGRADE" == "yes" ]; then
     echo "osd_directory: true" | tee -a $uev
 fi
 
+# MaaS checks and alarms may need more time to come up after an upgrade,
+# so we increase the number of retries and the time inbetween retries.
+if [ "$UPGRADE" == "yes" ]; then
+    echo "verify_maas_delay: 60" | tee -a $uev
+    echo "verify_maas_retries: 10" | tee -a $uev
+fi
+
 if [[ ${UBUNTU_REPO:-auto} == "auto" ]]; then
   select_fastest_mirror
 fi
