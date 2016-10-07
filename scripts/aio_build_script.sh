@@ -217,6 +217,9 @@ export BOOTSTRAP_OPTS="${BOOTSTRAP_OPTS} bootstrap_host_ubuntu_security_repo=${U
 # Add any additional vars specified in jenkins job params
 echo "${USER_VARS:-}" | tee -a $uev
 
+# Explicitly set HOME variable
+export HOME=/root
+
 run_rpc_deploy
 run_tempest
 run_holland
