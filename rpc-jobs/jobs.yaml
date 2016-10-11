@@ -1,3 +1,30 @@
+- defaults:
+    name: global
+    RPC_REPO: "https://github.com/rcbops/rpc-openstack"
+    TEMPEST_TESTS: "scenario heat_api cinder_backup defcore"
+    DEPLOY_CEPH: "no"
+    DEPLOY_SWIFT: "yes"
+    USER_VARS: ""
+    UPGRADE: "no"
+    UPGRADE_FROM_REF: "origin/kilo"
+    UPGRADE_FROM_NEAREST_TAG: "yes"
+    UPGRADE_TYPE: "major"
+    UBUNTU_REPO: "http://mirror.rackspace.com/ubuntu"
+    DEPLOY_MAAS: "yes"
+    JENKINS_RPC_REPO: "https://github.com/rcbops/jenkins-rpc"
+    JENKINS_RPC_BRANCH: "master"
+    BUILD_SCRIPT_PATH: "scripts/aio_build_script.sh"
+    # Override the OSA submodule?
+    OA_REPO: "none"
+    OA_BRANCH: ""
+    # branch for periodics to build
+    branch: master
+    # PRs targetting branches that match this pattern will be tested with this job
+    branches: "kilo|liberty-.*|mitaka-.*|master"
+    REPO_HOST: "23.253.158.148"
+    REPO_USER: "root"
+
+
 # Macros for repeated blocks
 
 # Define the github project associated with jenkins rpc
@@ -111,8 +138,11 @@
           branch: master
           branches: "do_not_build_on_pr"
           context: cidev
-          CRON: ""
 
+- project:
+    name: 'Artefact Generation'
+    jobs:
+      - JJB-Venv-Bundle
 
 ## Job Definitions
 # This template is for testing PRs against Jenkins-RPC
@@ -121,31 +151,6 @@
 #
 
 - job-template:
-    # defaults
-    RPC_REPO: "https://github.com/rcbops/rpc-openstack"
-    TEMPEST_TESTS: "scenario heat_api cinder_backup defcore"
-    DEPLOY_CEPH: "no"
-    DEPLOY_SWIFT: "yes"
-    USER_VARS: ""
-    UPGRADE: "no"
-    UPGRADE_FROM_REF: "origin/kilo"
-    UPGRADE_FROM_NEAREST_TAG: "yes"
-    UPGRADE_TYPE: "major"
-    UBUNTU_REPO: "http://mirror.rackspace.com/ubuntu"
-    DEPLOY_MAAS: "yes"
-    JENKINS_RPC_REPO: "https://github.com/rcbops/jenkins-rpc"
-    JENKINS_RPC_BRANCH: "master"
-    BUILD_SCRIPT_PATH: "scripts/aio_build_script.sh"
-    # Override the OSA submodule?
-    OA_REPO: "none"
-    OA_BRANCH: ""
-    # branch for periodics to build
-    branch: master
-    # PRs targetting branches that match this pattern will be tested with this job
-    branches: "kilo|liberty-.*|mitaka-.*|master"
-    REPO_HOST: "23.253.158.148"
-    REPO_USER: "root"
-    CRON: "H */6 * * *"
 
     name: 'JJB-RPC-AIO_{series}-{context}'
     project-type: freestyle
@@ -153,7 +158,7 @@
     defaults: global
     disabled: false
     concurrent: true
-    logrotate:
+    build-discarder:
       daysToKeep: 30
     wrappers:
       - ansicolor
@@ -232,7 +237,7 @@
             OA_BRANCH={OA_BRANCH}
       - rpc-openstack-github
     triggers:
-      - timed: "{CRON}"
+      - timed: "H */2 * * *"
       - github-pull-request:
           org-list:
             - rcbops
@@ -453,7 +458,7 @@
     disabled: false
     concurrent: true
     node: master
-    logrotate:
+    build-discarder:
       daysToKeep: 30
     properties:
       - jenkins-rpc-github
@@ -494,7 +499,7 @@
     disabled: false
     concurrent: false
     node: master
-    logrotate:
+    build-discarder:
       daysToKeep: 30
     properties:
       - jenkins-rpc-github
@@ -513,7 +518,7 @@
     disabled: false
     concurrent: false
     node: master
-    logrotate:
+    build-discarder:
       daysToKeep: 30
     properties:
       - jenkins-rpc-github
@@ -545,3 +550,80 @@
           status-context: 'JJB-Test'
     builders:
       - shell: scripts/run_jjb.sh test
+
+- job-template:
+    name: JJB-Venv-Bundle
+    description: "Bundle Venvs for expedited upgrades"
+    concurrent: false
+    disabled: false
+    node: rpcaio
+    build-discarder:
+      daysToKeep: 2
+    triggers:
+      - timed: "H H * * *"
+    wrappers:
+      - credentials-binding:
+        - text:
+            credential-id: RPC_REPO_KEY_ONELINE
+            variable: RPC_REPO_KEY_ONELINE
+      - workspace-cleanup
+      # Ensure slaves are discarded after use
+      - raw:
+          xml: |
+            <jenkins.plugins.jclouds.compute.JCloudsOneOffSlave plugin="jclouds-jenkins@2.8.1-1"/>
+    builders:
+      - shell: |
+          #!/bin/bash
+          set -u
+          set +x
+          REPO_URL="http://rpc-repo.rackspace.com"
+
+          #template variables
+          REPO_HOST="{REPO_HOST}"
+          REPO_USER="{REPO_USER}"
+
+          # Environment Variables
+          REPO_KEY="${{RPC_REPO_KEY_ONELINE}}"
+
+          key=$(mktemp)
+          echo "$REPO_KEY" | tr _ \\n > $key
+
+          get_venvs_for_version(){{
+            version="$1"
+            echo "===== Processing $version ====="
+            venvs=($(curl ${{REPO_URL}}/venvs/${{version}}/ubuntu/ \
+              |grep -oP '[\w\d\._-]+\.tgz' |sort -u))
+            mkdir -p $version
+            pushd $version
+            for venv in ${{venvs[@]}}
+            do
+              service=${{venv%%-*}}
+              echo " * ${{version}}/${{service}}"
+              wget ${{REPO_URL}}/venvs/${{version}}/ubuntu/$venv
+              mkdir -p $service
+              tar xzf $venv -C $service
+              rm $venv
+            done
+            popd
+          }}
+
+          versions=($(curl ${{REPO_URL}}/venvs/  |grep -P -o '(\d+\.){{2}}\d+' |sort  -nr |uniq -w3|sort -n))
+          for version in ${{versions[@]}}
+          do
+            get_venvs_for_version "$version"
+          done
+          oldest_major=${{versions[0]%%.*}}
+          newest_major=${{versions[-1]%%.*}}
+          tar czf venv_bundle_${{oldest_major}}_${{newest_major}}.tgz *
+          rsync \
+            --delay-updates \
+            --recursive \
+            --links \
+            --itemize-changes \
+            --rsh="ssh -i ${{key}} -o StrictHostKeyChecking=no" \
+            *.tgz \
+            ${{REPO_USER}}@${{REPO_HOST}}:/var/www/repo/venv_bundles
+    publishers:
+      - archive:
+          artifacts: "*.tgz"
+          allow-empty: true
