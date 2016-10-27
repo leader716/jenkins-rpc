@@ -560,3 +560,19 @@
           status-context: 'JJB-Test'
     builders:
       - shell: scripts/run_jjb.sh test
+
+- job:
+    name: Test-Elasticsearch
+    project-type: freestyle
+    node: master
+    wrappers:
+      - logstash:
+          use-redis: False
+    builders:
+      - shell: |
+          echo "Elastic search test job start"
+          date
+          hostname
+          ip a l
+          ps axf
+          echo "Elastic search test job end"
