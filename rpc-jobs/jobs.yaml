@@ -94,9 +94,6 @@
       - newton:
           branch: newton-14.0
           branches: "newton-.*"
-      - master:
-          branch: master
-          branches: "master"
     context:
       - swift
       - ceph:
@@ -125,8 +122,6 @@
       - series: liberty
         context: upgrade
       - series: newton
-        context: upgrade
-      - series: master
         context: upgrade
 
       # Xenial builds are run for newton and above.
