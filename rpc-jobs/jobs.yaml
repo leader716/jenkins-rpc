@@ -739,7 +739,7 @@
 
 - job:
     name: JJB-artifacts-apt
-    node: ArtifactBuilder
+    node: ArtifactBuilder2
     concurrent: false
     build-discarder:
       daysToKeep: 30
