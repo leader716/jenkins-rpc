@@ -102,6 +102,7 @@
       - ceph:
           DEPLOY_CEPH: "yes"
           USER_VARS: |
+            ceph_stable_version: "hammer"
             cinder_cinder_conf_overrides:
                 DEFAULT:
                     default_volume_type: ceph
