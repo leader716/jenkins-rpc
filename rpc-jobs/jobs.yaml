@@ -192,7 +192,7 @@
     project-type: freestyle
     node: master
     defaults: global
-    disabled: false
+    disabled: true
     concurrent: true
     logrotate:
       daysToKeep: 30
@@ -483,7 +483,7 @@
     project-type: freestyle
     description: 'Managed by JJB: Misc {name}'
     defaults: global
-    disabled: false
+    disabled: true
     concurrent: false
     node: master
     logrotate:
@@ -617,6 +617,7 @@
 - job:
     name: JJB-RPC-Training-Multinode
     node: master
+    disabled: true
     concurrent: true
     build-discarder:
       daysToKeep: 30
@@ -707,6 +708,7 @@
 - job:
     name: JJB-Upgrade-Matrix
     project-type: workflow
+    disabled: true
     concurrent: true
     parameters:
       - string:
